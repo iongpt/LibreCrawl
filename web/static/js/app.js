@@ -1202,34 +1202,6 @@ function isValidUrl(string) {
     }
 }
 
-// This is defined in settings.js - no need to redefine here
-
-async function logout() {
-    try {
-        const response = await fetch('/api/logout', {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json'
-            }
-        });
-
-        const data = await response.json();
-
-        if (data.success) {
-            // Redirect to login page
-            window.location.href = '/login';
-        } else {
-            console.error('Logout failed:', data.message);
-            // Still redirect even if logout fails
-            window.location.href = '/login';
-        }
-    } catch (error) {
-        console.error('Logout error:', error);
-        // Redirect anyway
-        window.location.href = '/login';
-    }
-}
-
 async function loadUserInfo() {
     try {
         const response = await fetch('/api/user/info');
@@ -1239,16 +1211,8 @@ async function loadUserInfo() {
             const user = data.user;
             const userInfoElement = document.getElementById('userInfo');
 
-            if (user.tier === 'guest') {
-                // Show crawls remaining for guests
-                const remaining = user.crawls_remaining;
-                userInfoElement.textContent = `Guest (${remaining}/3 crawls remaining)`;
-                userInfoElement.style.color = remaining === 0 ? '#dc2626' : '#6b7280';
-            } else {
-                // Show username and tier for registered users
-                userInfoElement.textContent = `${user.username} (${user.tier})`;
-                userInfoElement.style.color = '#6b7280';
-            }
+            userInfoElement.textContent = `${user.username} (self-hosted admin)`;
+            userInfoElement.style.color = '#6b7280';
         }
     } catch (error) {
         console.error('Error loading user info:', error);

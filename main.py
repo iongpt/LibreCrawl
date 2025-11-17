@@ -9,11 +9,11 @@ import argparse
 import os
 from io import StringIO
 from datetime import datetime, timedelta
-from flask import Flask, render_template, request, jsonify, session, redirect, url_for
+from flask import Flask, render_template, request, jsonify, session
 from functools import wraps
 from src.crawler import WebCrawler
 from src.settings_manager import SettingsManager
-from src.auth_db import init_db, create_user, authenticate_user, get_user_by_id, log_guest_crawl, get_guest_crawls_last_24h
+from src.auth_db import init_db, get_crawls_last_24h, log_crawl_start, get_or_create_admin_user
 
 # Parse command line arguments
 parser = argparse.ArgumentParser(description='LibreCrawl - SEO Spider Tool')
@@ -51,16 +51,34 @@ def get_client_ip():
     # Fall back to direct connection IP
     return request.remote_addr
 
+def ensure_admin_session():
+    """Auto-create and authenticate the self-hosted admin user"""
+    if session.get('user_id') and session.get('tier') == 'admin':
+        return
+
+    admin_user = get_or_create_admin_user()
+    if not admin_user.get('id'):
+        return
+
+    session['user_id'] = admin_user['id']
+    session['username'] = admin_user['username']
+    session['tier'] = 'admin'
+    session.permanent = True
+
 def login_required(f):
-    """Decorator to require login for routes"""
+    """Decorator to ensure the self-hosted admin session exists"""
     @wraps(f)
     def decorated_function(*args, **kwargs):
-        if 'user_id' not in session:
-            if request.path.startswith('/api/'):
-                return jsonify({'success': False, 'error': 'Authentication required'}), 401
-            return redirect(url_for('login_page'))
+        ensure_admin_session()
         return f(*args, **kwargs)
     return decorated_function
+
+@app.before_request
+def auto_login_admin():
+    """Automatically authenticate every request with the admin user"""
+    if request.path.startswith('/static/'):
+        return
+    ensure_admin_session()
 
 # Multi-tenant crawler instances
 crawler_instances = {}  # session_id -> {'crawler': WebCrawler, 'settings': SettingsManager, 'last_accessed': datetime}
@@ -74,7 +92,7 @@ def get_or_create_crawler():
 
     session_id = session['session_id']
     user_id = session.get('user_id')  # Get user_id from session
-    tier = session.get('tier', 'guest')  # Get tier from session
+    tier = session.get('tier', 'admin')  # Get tier from session
 
     with instances_lock:
         # Check if crawler exists for this session
@@ -99,7 +117,7 @@ def get_session_settings():
 
     session_id = session['session_id']
     user_id = session.get('user_id')  # Get user_id from session
-    tier = session.get('tier', 'guest')  # Get tier from session
+    tier = session.get('tier', 'admin')  # Get tier from session
 
     with instances_lock:
         # Create instance if it doesn't exist
@@ -334,106 +352,15 @@ def generate_issues_json_export(issues):
         'all_issues': issues
     }, indent=2)
 
-@app.route('/login')
-def login_page():
-    # Redirect to app if already logged in
-    if 'user_id' in session:
-        return redirect(url_for('index'))
-    return render_template('login.html')
-
-@app.route('/register')
-def register_page():
-    # Redirect to app if already logged in
-    if 'user_id' in session:
-        return redirect(url_for('index'))
-    return render_template('register.html')
-
-@app.route('/api/register', methods=['POST'])
-def register():
-    data = request.get_json()
-    username = data.get('username')
-    email = data.get('email')
-    password = data.get('password')
-
-    success, message = create_user(username, email, password)
-
-    # In local mode, auto-verify and set to admin tier
-    if success and LOCAL_MODE:
-        try:
-            from src.auth_db import verify_user, set_user_tier
-            # Get the user that was just created
-            import sqlite3
-            conn = sqlite3.connect('users.db')
-            conn.row_factory = sqlite3.Row
-            cursor = conn.cursor()
-            cursor.execute('SELECT id FROM users WHERE username = ?', (username,))
-            user = cursor.fetchone()
-            conn.close()
-
-            if user:
-                verify_user(user['id'])
-                set_user_tier(user['id'], 'admin')
-                message = 'Account created and verified! You have admin access in local mode.'
-        except Exception as e:
-            print(f"Error during local mode auto-verification: {e}")
-            # Don't fail the registration, just log the error
-            # The account is still created successfully
-
-    return jsonify({'success': success, 'message': message})
-
-@app.route('/api/login', methods=['POST'])
-def login():
-    data = request.get_json()
-    username = data.get('username')
-    password = data.get('password')
-
-    success, message, user_data = authenticate_user(username, password)
-
-    if success:
-        session['user_id'] = user_data['id']
-        session['username'] = user_data['username']
-        # In local mode, always give admin tier
-        session['tier'] = 'admin' if LOCAL_MODE else user_data['tier']
-        session.permanent = True  # Remember login
-
-    return jsonify({'success': success, 'message': message})
-
-@app.route('/api/guest-login', methods=['POST'])
-def guest_login():
-    """Login as a guest user (no account required, limited to 3 crawls/24h)"""
-    # Create a guest session with no user_id but with tier='guest'
-    # In local mode, guests also get admin tier
-    session['user_id'] = None
-    session['username'] = 'Guest'
-    session['tier'] = 'admin' if LOCAL_MODE else 'guest'
-    session.permanent = False  # Don't persist guest sessions
-
-    return jsonify({'success': True, 'message': 'Logged in as guest'})
-
-@app.route('/api/logout', methods=['POST'])
-@login_required
-def logout():
-    session.clear()
-    return jsonify({'success': True, 'message': 'Logged out successfully'})
-
 @app.route('/api/user/info')
 @login_required
 def user_info():
     """Get current user info including tier"""
-    from src.auth_db import get_crawls_last_24h
     user_id = session.get('user_id')
-    tier = session.get('tier', 'guest')
+    tier = session.get('tier', 'admin')
     username = session.get('username')
 
-    # Get crawl count
-    crawls_today = 0
-    if tier == 'guest':
-        # For guests, count from IP address
-        client_ip = get_client_ip()
-        crawls_today = get_guest_crawls_last_24h(client_ip)
-    else:
-        # For registered users, count from database
-        crawls_today = get_crawls_last_24h(user_id)
+    crawls_today = get_crawls_last_24h(user_id)
 
     return jsonify({
         'success': True,
@@ -441,8 +368,7 @@ def user_info():
             'id': user_id,
             'username': username,
             'tier': tier,
-            'crawls_today': crawls_today,
-            'crawls_remaining': max(0, 3 - crawls_today) if tier == 'guest' else -1
+            'crawls_today': crawls_today
         }
     })
 
@@ -460,8 +386,6 @@ def debug_memory_page():
 @app.route('/api/start_crawl', methods=['POST'])
 @login_required
 def start_crawl():
-    from src.auth_db import get_crawls_last_24h, log_crawl_start
-
     data = request.get_json()
     url = data.get('url')
 
@@ -469,21 +393,7 @@ def start_crawl():
         return jsonify({'success': False, 'error': 'URL is required'})
 
     user_id = session.get('user_id')
-    tier = session.get('tier', 'guest')
-
-    # Check guest limits (IP-based) - skip in local mode
-    if tier == 'guest' and not LOCAL_MODE:
-        client_ip = get_client_ip()
-        crawls_from_ip = get_guest_crawls_last_24h(client_ip)
-
-        if crawls_from_ip >= 3:
-            return jsonify({
-                'success': False,
-                'error': 'Guest limit reached: 3 crawls per 24 hours from your IP address. Please register for unlimited crawls.'
-            })
-
-        # Log this guest crawl
-        log_guest_crawl(client_ip)
+    tier = session.get('tier', 'admin')
 
     # Get or create crawler for this session
     crawler = get_or_create_crawler()
@@ -846,8 +756,8 @@ def main():
     print(f"\n🚀 Server starting on http://0.0.0.0:{APP_PORT}")
     print(f"🌐 Access from browser: http://localhost:{APP_PORT}")
     print(f"📱 Access from network: http://<your-ip>:{APP_PORT}")
-    print(f"\n✨ Multi-tenancy enabled - each browser session is isolated")
-    print(f"💾 Settings stored in browser localStorage")
+    print(f"\n🔐 Authentication disabled - admin session auto-provisioned for self-hosted use")
+    print(f"💾 Settings stored in browser localStorage per device")
     print(f"\nPress Ctrl+C to stop the server\n")
     print("=" * 60 + "\n")
 

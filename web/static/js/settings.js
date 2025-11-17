@@ -307,7 +307,7 @@ function resetIssueExclusions() {
 
 async function openSettings() {
     // Get user tier info
-    let userTier = 'guest';
+    let userTier = 'admin';
     try {
         const response = await fetch('/api/user/info');
         const data = await response.json();
@@ -316,12 +316,6 @@ async function openSettings() {
         }
     } catch (error) {
         console.error('Failed to get user tier:', error);
-    }
-
-    // Block guests from accessing settings
-    if (userTier === 'guest') {
-        alert('Settings are not available for guest users.\n\nPlease register for a free account to customize crawler settings, filters, and more.\n\nClick "Logout" and then "Register here" to create an account.');
-        return;
     }
 
     // Hide tabs based on tier
@@ -343,7 +337,6 @@ async function openSettings() {
 function applyTierRestrictions(tier) {
     // Define which tabs each tier can see - MUST MATCH HTML TAB NAMES
     const tierTabs = {
-        'guest': [],  // No settings tabs for guests
         'user': ['crawler', 'export', 'issues'],
         'extra': ['crawler', 'export', 'issues', 'filters', 'requests', 'customcss', 'javascript'],
         'admin': ['crawler', 'requests', 'filters', 'export', 'javascript', 'issues', 'customcss', 'advanced']
@@ -372,21 +365,6 @@ function applyTierRestrictions(tier) {
         }
     }
 
-    // Show message for guests
-    if (tier === 'guest') {
-        const settingsContent = document.querySelector('.settings-tabs');
-        if (settingsContent) {
-            const message = document.createElement('div');
-            message.style.cssText = 'padding: 40px; text-align: center; color: #9ca3af; font-size: 16px;';
-            message.innerHTML = `
-                <h3 style="color: #f3f4f6; margin-bottom: 16px;">Settings Access Restricted</h3>
-                <p>Guest accounts cannot modify settings.</p>
-                <p style="margin-top: 8px; font-size: 14px;">Please upgrade your account to access settings.</p>
-            `;
-            settingsContent.innerHTML = '';
-            settingsContent.appendChild(message);
-        }
-    }
 }
 
 function closeSettings() {

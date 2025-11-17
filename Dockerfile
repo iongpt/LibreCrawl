@@ -4,7 +4,10 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
     APP_SECRET_KEY=change-me \
     AUTH_DB_PATH=/data/users.db \
-    APP_PORT=5050
+    APP_PORT=5050 \
+    ADMIN_USERNAME=admin \
+    ADMIN_EMAIL=admin@librecrawl.local \
+    ADMIN_PASSWORD=
 
 WORKDIR /app
 

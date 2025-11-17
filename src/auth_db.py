@@ -5,6 +5,7 @@ Handles user registration, login, and verification
 import sqlite3
 import bcrypt
 import os
+import secrets
 from datetime import datetime
 from contextlib import contextmanager
 
@@ -93,6 +94,42 @@ def hash_password(password):
 def verify_password(password, password_hash):
     """Verify a password against its hash"""
     return bcrypt.checkpw(password.encode('utf-8'), password_hash.encode('utf-8'))
+
+def get_or_create_admin_user():
+    """Ensure an admin user exists for self-hosted deployments and return it"""
+    default_username = os.getenv('ADMIN_USERNAME', 'admin')
+    default_email = os.getenv('ADMIN_EMAIL', f'{default_username}@librecrawl.local')
+    default_password = os.getenv('ADMIN_PASSWORD')
+
+    try:
+        with get_db() as conn:
+            cursor = conn.cursor()
+            cursor.execute('''
+                SELECT id, username
+                FROM users
+                WHERE tier = 'admin'
+                ORDER BY id ASC
+                LIMIT 1
+            ''')
+            user = cursor.fetchone()
+
+            if user:
+                return {'id': user['id'], 'username': user['username']}
+
+            password_value = default_password or secrets.token_urlsafe(16)
+            password_hash = hash_password(password_value)
+
+            cursor.execute('''
+                INSERT INTO users (username, email, password_hash, verified, tier)
+                VALUES (?, ?, ?, 1, 'admin')
+            ''', (default_username, default_email, password_hash))
+
+            print(f"Created default admin user '{default_username}' for self-hosted mode.")
+            return {'id': cursor.lastrowid, 'username': default_username}
+
+    except Exception as e:
+        print(f"Error ensuring admin user: {e}")
+        return {'id': None, 'username': default_username}
 
 def create_user(username, email, password):
     """
