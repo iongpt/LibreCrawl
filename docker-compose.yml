@@ -1,0 +1,19 @@
+services:
+  librecrawl:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: librecrawl:local
+    command: ["python", "main.py", "--local"]
+    environment:
+      APP_SECRET_KEY: ${APP_SECRET_KEY:-dev-secret}
+      AUTH_DB_PATH: /data/users.db
+      APP_PORT: ${APP_PORT:-5050}
+    ports:
+      - 5050:5050
+    volumes:
+      - librecrawl-data:/data
+    restart: unless-stopped
+
+volumes:
+  librecrawl-data:

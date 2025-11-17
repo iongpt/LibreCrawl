@@ -6,6 +6,7 @@ import xml.etree.ElementTree as ET
 import uuid
 import webbrowser
 import argparse
+import os
 from io import StringIO
 from datetime import datetime, timedelta
 from flask import Flask, render_template, request, jsonify, session, redirect, url_for
@@ -21,9 +22,10 @@ parser.add_argument('--local', '-l', action='store_true',
 args = parser.parse_args()
 
 LOCAL_MODE = args.local
+APP_PORT = int(os.getenv('APP_PORT', '5000'))
 
 app = Flask(__name__, template_folder='web/templates', static_folder='web/static')
-app.secret_key = 'librecrawl-secret-key-change-in-production'  # TODO: Use environment variable in production
+app.secret_key = os.getenv('APP_SECRET_KEY', 'librecrawl-secret-key-change-in-production')
 
 # Initialize database on startup
 init_db()
@@ -841,9 +843,9 @@ def main():
     print("=" * 60)
     print("LibreCrawl - SEO Spider")
     print("=" * 60)
-    print(f"\n🚀 Server starting on http://0.0.0.0:5000")
-    print(f"🌐 Access from browser: http://localhost:5000")
-    print(f"📱 Access from network: http://<your-ip>:5000")
+    print(f"\n🚀 Server starting on http://0.0.0.0:{APP_PORT}")
+    print(f"🌐 Access from browser: http://localhost:{APP_PORT}")
+    print(f"📱 Access from network: http://<your-ip>:{APP_PORT}")
     print(f"\n✨ Multi-tenancy enabled - each browser session is isolated")
     print(f"💾 Settings stored in browser localStorage")
     print(f"\nPress Ctrl+C to stop the server\n")
@@ -852,13 +854,13 @@ def main():
     # Open browser in a separate thread after short delay
     def open_browser():
         time.sleep(1.5)  # Wait for Flask to start
-        webbrowser.open('http://localhost:5000')
+        webbrowser.open(f'http://localhost:{APP_PORT}')
 
     browser_thread = threading.Thread(target=open_browser, daemon=True)
     browser_thread.start()
 
     # Run Flask server
-    app.run(host='0.0.0.0', port=5000, debug=False, use_reloader=False)
+    app.run(host='0.0.0.0', port=APP_PORT, debug=False, use_reloader=False)
 
 if __name__ == '__main__':
     main()

@@ -72,6 +72,38 @@ python main.py -l
 - Perfect for personal use or single-user self-hosting
 - Recommended for local development and testing
 
+## Docker & Containerization
+
+### Build and Run with Docker
+1. Build the image (runs Playwright install for JS rendering support):
+   ```bash
+   docker build -t librecrawl .
+   ```
+2. Run it on port 5050 (to avoid macOS Control Center conflicts), providing a non-default secret key and persisting the SQLite DB:
+   ```bash
+   docker run -p 5050:5050 \
+     -e APP_SECRET_KEY=super-secret \
+     -e APP_PORT=5050 \
+     -v librecrawl-data:/data \
+     librecrawl
+   ```
+   The image defaults `APP_PORT` and `AUTH_DB_PATH` to `/data/users.db`, so mounting `/data` keeps users and settings across restarts.
+
+### Develop with Docker Compose
+Use the included `docker-compose.yml` for a local-friendly stack (runs in `--local` mode automatically):
+```bash
+APP_SECRET_KEY=dev-secret APP_PORT=5050 docker compose up --build
+```
+This maps port `5050`, stores the SQLite database in the named `librecrawl-data` volume, and hot-rebuilds when code changes.
+
+### Automated Image Releases
+Pushing a semantic tag matching `v*` (for example `v1.0.0`) triggers `.github/workflows/release.yml`, which builds `Dockerfile` and publishes images to `ghcr.io/<owner>/<repo>` tagged with both the version and `latest`. After merging changes, create and push your first release tag:
+```bash
+git tag v1.0.0
+git push origin v1.0.0
+```
+GitHub Actions will handle the rest.
+
 ## Configuration
 
 Click "Settings" to configure:
